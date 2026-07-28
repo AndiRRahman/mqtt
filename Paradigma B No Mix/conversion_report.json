@@ -1,0 +1,101 @@
+{
+  "input_size": [
+    224,
+    224
+  ],
+  "number_of_classes": 5,
+  "class_names": [
+    "CardBoard",
+    "Food Waste",
+    "Metal",
+    "Paper",
+    "Plastic"
+  ],
+  "successful_models": {
+    "efficientnet_b0": {
+      "input_shape": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "output_shape": [
+        1,
+        5
+      ],
+      "pytorch_class": 2,
+      "litert_class": 2,
+      "pytorch_label": "Metal",
+      "litert_label": "Metal",
+      "maximum_difference": 1.04052734375,
+      "outputs_close": true,
+      "same_prediction": true,
+      "file": "efficientnet_b0.tflite",
+      "file_size_mb": 15.47
+    },
+    "resnet50": {
+      "input_shape": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "output_shape": [
+        1,
+        5
+      ],
+      "pytorch_class": 0,
+      "litert_class": 0,
+      "pytorch_label": "CardBoard",
+      "litert_label": "CardBoard",
+      "maximum_difference": 2.384185791015625e-06,
+      "outputs_close": true,
+      "same_prediction": true,
+      "file": "resnet50.tflite",
+      "file_size_mb": 89.71
+    },
+    "densenet121": {
+      "input_shape": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "output_shape": [
+        1,
+        5
+      ],
+      "pytorch_class": 3,
+      "litert_class": 3,
+      "pytorch_label": "Paper",
+      "litert_label": "Paper",
+      "maximum_difference": 2.682209014892578e-06,
+      "outputs_close": true,
+      "same_prediction": true,
+      "file": "densenet121.tflite",
+      "file_size_mb": 27.15
+    },
+    "shufflenet_v2_x1_0": {
+      "input_shape": [
+        1,
+        3,
+        224,
+        224
+      ],
+      "output_shape": [
+        1,
+        5
+      ],
+      "pytorch_class": 0,
+      "litert_class": 0,
+      "pytorch_label": "CardBoard",
+      "litert_label": "CardBoard",
+      "maximum_difference": 1.430511474609375e-06,
+      "outputs_close": true,
+      "same_prediction": true,
+      "file": "shufflenet_v2_x1_0.tflite",
+      "file_size_mb": 4.92
+    }
+  },
+  "failed_models": {}
+}

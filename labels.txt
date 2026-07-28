@@ -1,0 +1,5 @@
+CardBoard
+Food Waste
+Metal
+Paper
+Plastic
