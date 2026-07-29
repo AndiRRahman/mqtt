@@ -9,6 +9,8 @@ import config
 from camera_service import CameraService
 from mqtt_service import MQTTService
 from inference_service import InferenceService
+from presence_detector import PresenceDetector
+
 
 
 def safe_float(
@@ -32,7 +34,7 @@ def format_classification_result(
 ) -> str:
 
     if not result:
-        return "Belum ada hasil klasifikasi"
+        return "Belum ada hasil"
 
 
     label = result.get(
@@ -49,7 +51,7 @@ def format_classification_result(
     )
 
 
-    model_name = result.get(
+    model = result.get(
         "model",
         "-"
     )
@@ -58,30 +60,27 @@ def format_classification_result(
     return (
         f"{label} "
         f"({confidence:.1%}) "
-        f"[{model_name}]"
+        f"{model}"
     )
 
 
 
-def load_all_models():
+def load_models():
 
-    model_directory = "Paradigma B No Mix"
+    model_dir = "Paradigma B No Mix"
 
     models = []
 
 
-    if not os.path.exists(
-        model_directory
-    ):
+    if not os.path.exists(model_dir):
 
         raise FileNotFoundError(
             "Folder model tidak ditemukan"
         )
 
 
-
     for filename in sorted(
-        os.listdir(model_directory)
+        os.listdir(model_dir)
     ):
 
 
@@ -90,28 +89,25 @@ def load_all_models():
         ):
 
 
-            model_path = os.path.join(
-                model_directory,
+            path = os.path.join(
+                model_dir,
                 filename
             )
 
 
             print(
-                "Memuat model:",
+                "Loading model:",
                 filename
-            )
-
-
-            model = InferenceService(
-                model_path=model_path,
-                labels_path="labels.txt"
             )
 
 
             models.append(
                 {
                     "name": filename,
-                    "model": model
+                    "model": InferenceService(
+                        model_path=path,
+                        labels_path="labels.txt"
+                    )
                 }
             )
 
@@ -120,12 +116,12 @@ def load_all_models():
     if len(models) == 0:
 
         raise RuntimeError(
-            "Tidak ada file .tflite"
+            "Tidak ada model TFLite"
         )
 
 
     print(
-        f"Total model aktif: {len(models)}"
+        f"{len(models)} model aktif"
     )
 
 
@@ -151,31 +147,29 @@ def predict_all_models(
 
         try:
 
-            result = model.predict(
+            prediction = model.predict(
                 frame
             )
 
 
-            result["model"] = name
+            prediction["model"] = name
 
 
             results.append(
-                result
+                prediction
             )
 
 
             print(
                 name,
-                ":",
-                result
+                prediction
             )
-
 
 
         except Exception as error:
 
             print(
-                f"{name} gagal:",
+                f"{name} error:",
                 error
             )
 
@@ -187,7 +181,7 @@ def predict_all_models(
 
 
 
-    best_result = max(
+    best = max(
         results,
         key=lambda x:
         x.get(
@@ -197,7 +191,7 @@ def predict_all_models(
     )
 
 
-    return best_result
+    return best
 
 
 
@@ -212,8 +206,14 @@ def main():
     mqtt_service = MQTTService()
 
 
+    presence_detector = (
+        PresenceDetector(
+            threshold=5000
+        )
+    )
 
-    models = load_all_models()
+
+    models = load_models()
 
 
 
@@ -228,18 +228,15 @@ def main():
 
     try:
 
-
         print("=" * 60)
-
         print(
-            "RASPBERRY PI MULTI MODEL AI MQTT SYSTEM"
+            "RASPBERRY PI AI SORTING SYSTEM"
         )
-
         print("=" * 60)
 
 
         print(
-            f"Broker : "
+            f"MQTT : "
             f"{config.MQTT_BROKER_HOST}:"
             f"{config.MQTT_BROKER_PORT}"
         )
@@ -252,9 +249,7 @@ def main():
         camera.open()
 
 
-
         mqtt_service.start()
-
 
 
         print(
@@ -266,36 +261,22 @@ def main():
         while True:
 
 
-
             success, frame, camera_read_ms = (
                 camera.read_frame()
             )
 
 
-
             if not success or frame is None:
 
-
-                print(
-                    "Frame kamera gagal"
-                )
-
-
-                time.sleep(
-                    0.2
-                )
-
                 continue
-
 
 
 
             current_time = time.monotonic()
 
 
-
             status = (
-                "Menunggu prediksi"
+                "Scanning"
             )
 
 
@@ -307,9 +288,56 @@ def main():
             ):
 
 
+                last_prediction_time = (
+                    current_time
+                )
 
-                try:
 
+
+                object_detected = (
+                    presence_detector
+                    .detect(frame)
+                )
+
+
+
+                if not object_detected:
+
+
+                    latest_prediction = {
+
+                        "label":
+                        "NO_OBJECT",
+
+                        "confidence":
+                        1.0,
+
+                        "class_id":
+                        -1,
+
+                        "model":
+                        "presence_detector"
+
+                    }
+
+
+                    print(
+                        "Tidak ada objek"
+                    )
+
+
+                    status = (
+                        "Tidak ada sampah"
+                    )
+
+
+
+                else:
+
+
+                    print(
+                        "Objek terdeteksi"
+                    )
 
 
                     prediction = (
@@ -320,7 +348,6 @@ def main():
                     )
 
 
-
                     if prediction:
 
 
@@ -329,54 +356,26 @@ def main():
                         )
 
 
-                        last_prediction_time = (
-                            current_time
-                        )
-
-
                         print(
-                            "HASIL TERBAIK:",
+                            "HASIL AKHIR:",
                             prediction
                         )
 
 
-
-                        if mqtt_service.is_connected():
-
-
-                            sent = (
-                                mqtt_service
-                                .publish_prediction_command(
-                                    prediction
-                                )
-                            )
-
-
-                            if sent:
-
-                                status = (
-                                    "Command ESP32 terkirim"
-                                )
-
-                            else:
-
-                                status = (
-                                    "Command gagal"
-                                )
+                        status = (
+                            "Sampah terdeteksi"
+                        )
 
 
 
-                except Exception as error:
+                if (
+                    mqtt_service.is_connected()
+                    and latest_prediction
+                ):
 
 
-                    print(
-                        "Inference error:",
-                        error
-                    )
-
-
-                    status = (
-                        "Inference error"
+                    mqtt_service.publish_prediction_command(
+                        latest_prediction
                     )
 
 
@@ -388,12 +387,10 @@ def main():
             )
 
 
-
             preview_status = (
                 f"{status} | "
                 f"AI: {ai_status}"
             )
-
 
 
             running = camera.show_preview(
@@ -404,6 +401,10 @@ def main():
 
 
             if not running:
+
+                print(
+                    "Preview dihentikan"
+                )
 
                 break
 
@@ -419,19 +420,16 @@ def main():
 
     except Exception as error:
 
-
         print(
             "System error:",
             error
         )
-
 
         raise
 
 
 
     finally:
-
 
         mqtt_service.stop()
 
