@@ -15,10 +15,16 @@ def safe_float(
     value: Any,
     default: float = 0.0,
 ) -> float:
+
     try:
         return float(value)
-    except (TypeError, ValueError):
+
+    except (
+        TypeError,
+        ValueError,
+    ):
         return default
+
 
 
 def format_classification_result(
@@ -28,10 +34,12 @@ def format_classification_result(
     if not result:
         return "Belum ada hasil klasifikasi"
 
+
     label = result.get(
         "label",
         "Unknown"
     )
+
 
     confidence = safe_float(
         result.get(
@@ -40,63 +48,92 @@ def format_classification_result(
         )
     )
 
-    return (
-        f"{label} "
-        f"({confidence:.1%})"
+
+    model_name = result.get(
+        "model",
+        "-"
     )
 
 
-def load_models():
+    return (
+        f"{label} "
+        f"({confidence:.1%}) "
+        f"[{model_name}]"
+    )
 
-    model_folder = "model"
+
+
+def load_all_models():
+
+    model_directory = "model"
 
     models = []
 
-    if not os.path.exists(model_folder):
+
+    if not os.path.exists(
+        model_directory
+    ):
+
         raise FileNotFoundError(
             "Folder model tidak ditemukan"
         )
 
 
-    for file in os.listdir(model_folder):
 
-        if file.endswith(".tflite"):
+    for filename in sorted(
+        os.listdir(model_directory)
+    ):
+
+
+        if filename.endswith(
+            ".tflite"
+        ):
+
 
             model_path = os.path.join(
-                model_folder,
-                file
+                model_directory,
+                filename
             )
 
+
             print(
-                "Loading model:",
-                model_path
+                "Memuat model:",
+                filename
             )
+
 
             model = InferenceService(
                 model_path=model_path,
                 labels_path="labels.txt"
             )
 
+
             models.append(
-                model
+                {
+                    "name": filename,
+                    "model": model
+                }
             )
 
 
+
     if len(models) == 0:
+
         raise RuntimeError(
-            "Tidak ada model TFLite ditemukan"
+            "Tidak ada file .tflite"
         )
 
 
     print(
-        f"{len(models)} model berhasil dimuat"
+        f"Total model aktif: {len(models)}"
     )
+
 
     return models
 
 
 
-def predict_with_all_models(
+def predict_all_models(
     models,
     frame
 ):
@@ -104,38 +141,50 @@ def predict_with_all_models(
     results = []
 
 
-    for index, model in enumerate(models):
+    for item in models:
+
+
+        name = item["name"]
+
+        model = item["model"]
+
 
         try:
 
-            prediction = model.predict(
+            result = model.predict(
                 frame
             )
 
-            prediction["model_id"] = index
+
+            result["model"] = name
+
 
             results.append(
-                prediction
+                result
             )
 
 
             print(
-                f"Model {index}:",
-                prediction
+                name,
+                ":",
+                result
             )
+
 
 
         except Exception as error:
 
             print(
-                f"Model {index} gagal:",
+                f"{name} gagal:",
                 error
             )
 
 
-    if len(results) == 0:
+
+    if not results:
 
         return None
+
 
 
     best_result = max(
@@ -159,15 +208,18 @@ def main():
 
     camera = CameraService()
 
+
     mqtt_service = MQTTService()
 
 
-    models = load_models()
+
+    models = load_all_models()
 
 
-    last_prediction_time = 0.0
 
     prediction_interval = 2.0
+
+    last_prediction_time = 0.0
 
 
     latest_prediction = None
@@ -176,10 +228,13 @@ def main():
 
     try:
 
+
         print("=" * 60)
+
         print(
-            "RASPBERRY PI AI MQTT SYSTEM"
+            "RASPBERRY PI MULTI MODEL AI MQTT SYSTEM"
         )
+
         print("=" * 60)
 
 
@@ -193,10 +248,13 @@ def main():
         print("=" * 60)
 
 
+
         camera.open()
 
 
+
         mqtt_service.start()
+
 
 
         print(
@@ -208,18 +266,27 @@ def main():
         while True:
 
 
+
             success, frame, camera_read_ms = (
                 camera.read_frame()
             )
 
 
+
             if not success or frame is None:
 
+
                 print(
-                    "Gagal membaca kamera"
+                    "Frame kamera gagal"
+                )
+
+
+                time.sleep(
+                    0.2
                 )
 
                 continue
+
 
 
 
@@ -227,7 +294,7 @@ def main():
 
 
 
-            publish_status = (
+            status = (
                 "Menunggu prediksi"
             )
 
@@ -240,14 +307,18 @@ def main():
             ):
 
 
+
                 try:
 
+
+
                     prediction = (
-                        predict_with_all_models(
+                        predict_all_models(
                             models,
                             frame
                         )
                     )
+
 
 
                     if prediction:
@@ -264,9 +335,10 @@ def main():
 
 
                         print(
-                            "HASIL AKHIR:",
+                            "HASIL TERBAIK:",
                             prediction
                         )
+
 
 
                         if mqtt_service.is_connected():
@@ -282,18 +354,20 @@ def main():
 
                             if sent:
 
-                                publish_status = (
+                                status = (
                                     "Command ESP32 terkirim"
                                 )
 
                             else:
 
-                                publish_status = (
+                                status = (
                                     "Command gagal"
                                 )
 
 
+
                 except Exception as error:
+
 
                     print(
                         "Inference error:",
@@ -301,8 +375,8 @@ def main():
                     )
 
 
-                    publish_status = (
-                        "Inference gagal"
+                    status = (
+                        "Inference error"
                     )
 
 
@@ -314,16 +388,19 @@ def main():
             )
 
 
+
             preview_status = (
-                f"{publish_status} | "
+                f"{status} | "
                 f"AI: {ai_status}"
             )
+
 
 
             running = camera.show_preview(
                 frame,
                 preview_status
             )
+
 
 
             if not running:
@@ -339,17 +416,22 @@ def main():
         )
 
 
+
     except Exception as error:
+
 
         print(
             "System error:",
             error
         )
 
+
         raise
 
 
+
     finally:
+
 
         mqtt_service.stop()
 
@@ -363,4 +445,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
