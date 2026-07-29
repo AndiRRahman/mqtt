@@ -6,7 +6,6 @@ from typing import Any
 import config
 
 from camera_service import CameraService
-from frame_encoder import FrameEncoder
 from mqtt_service import MQTTService
 from inference_service import InferenceService
 
@@ -68,10 +67,6 @@ def main() -> None:
     # ============================
 
     camera = CameraService()
-
-
-    encoder = FrameEncoder()
-
 
     mqtt_service = MQTTService()
 
