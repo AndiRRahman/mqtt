@@ -98,41 +98,67 @@ class InferenceService:
     # PREPROCESS IMAGE
     # ==========================================
 
-    def _preprocess(
+   def _preprocess(
         self,
         frame: np.ndarray,
-    ) -> np.ndarray:
-
-
-        image = cv2.resize(
-            frame,
-            (
-                self.input_size,
-                self.input_size,
-            )
-        )
-
-
+    ):
+    
+        TARGET_SIZE = (224, 224)
+    
+    
+        # BGR OpenCV -> RGB
         image = cv2.cvtColor(
-            image,
-            cv2.COLOR_BGR2RGB,
+            frame,
+            cv2.COLOR_BGR2RGB
         )
-
-
+    
+    
+        # resize
+        image = cv2.resize(
+            image,
+            TARGET_SIZE
+        )
+    
+    
+        # uint8 -> float32
         image = image.astype(
             np.float32
+        ) / 255.0
+    
+    
+    
+        # ImageNet normalization
+        mean = np.array(
+            [0.485, 0.456, 0.406],
+            dtype=np.float32
         )
-
-
-        image = image / 255.0
-
-
+    
+        std = np.array(
+            [0.229, 0.224, 0.225],
+            dtype=np.float32
+        )
+    
+    
+        image = (
+            image - mean
+        ) / std
+    
+    
+    
+        # HWC -> CHW
+        image = np.transpose(
+            image,
+            (2,0,1)
+        )
+    
+    
+        # tambah batch
         image = np.expand_dims(
             image,
-            axis=0,
+            axis=0
         )
-
-
+    
+    
         return image
 
 
