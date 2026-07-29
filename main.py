@@ -7,6 +7,7 @@ import config
 from camera_service import CameraService
 from frame_encoder import FrameEncoder
 from mqtt_service import MQTTService
+from inference_service import InferenceService
 
 
 def safe_float(
@@ -52,6 +53,11 @@ def main() -> None:
     encoder = FrameEncoder()
     mqtt_service = MQTTService()
 
+    ai = InferenceService(
+        model_path="model/efficientnet_b0.tflite",
+        labels_path="labels.txt"
+    )
+
     frame_id = 0
     last_publish_time = 0.0
 
@@ -93,6 +99,16 @@ def main() -> None:
                     config.CAMERA_RETRY_DELAY_SECONDS
                 )
                 continue
+
+            prediction = ai.predict(
+                frame
+            )
+
+
+            print(
+                "HASIL AI:",
+                prediction
+            )
 
             current_time = time.monotonic()
 
