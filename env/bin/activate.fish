@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/norharyatiharum/sampah_ai_server/env
+set -gx VIRTUAL_ENV '/home/norharyatiharum/Paradigma B No MIX/env'
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

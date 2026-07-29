@@ -1,0 +1,21 @@
+{
+  "image_size": 224,
+  "imagenet_mean": [0.485, 0.456, 0.406],
+  "imagenet_std": [0.229, 0.224, 0.225],
+  "gaussian_kernel": [5, 5],
+  "hsv_lower": [0, 0, 180],
+  "hsv_upper": [180, 40, 255],
+  "class_names": [
+    "CardBoard",
+    "Food Waste",
+    "Metal",
+    "Paper",
+    "Plastic"
+  ],
+  "ensemble_methods": [
+    "hard_voting",
+    "soft_voting",
+    "weighted_soft_voting",
+    "stacking"
+  ]
+}

@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV=/home/norharyatiharum/sampah_ai_server/env
+VIRTUAL_ENV='/home/norharyatiharum/Paradigma B No MIX/env'
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
