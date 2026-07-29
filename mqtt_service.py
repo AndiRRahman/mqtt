@@ -2,99 +2,31 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any, Callable
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
 import config
 
 
-ResultCallback = Callable[
-    [dict[str, Any]],
-    None
-]
-
-
 class MQTTService:
 
-    def __init__(
-        self,
-        result_callback: ResultCallback | None = None,
-    ) -> None:
 
-
-        self.result_callback = result_callback
-
+    def __init__(self):
 
         self._connected = threading.Event()
 
-
         self._loop_started = False
-
 
         self.client = self._create_client()
 
 
-    def publish_prediction_command(
-        self,
-        prediction_result: dict[str, Any]
-    ) -> bool:
 
-        if not self.is_connected():
-            print(
-                "MQTT belum terhubung"
-            )
-            return False
-    
-    
-        payload = json.dumps(
-            {
-                "class": prediction_result.get(
-                    "label",
-                    "Unknown"
-                ),
-    
-                "confidence": prediction_result.get(
-                    "confidence",
-                    0.0
-                ),
-    
-                "class_id": prediction_result.get(
-                    "class_id",
-                    -1
-                )
-            }
-        )
-    
-    
-        result = self.client.publish(
-            "sampah/command",
-            payload,
-            qos=1
-        )
-    
-    
-        if result.rc == mqtt.MQTT_ERR_SUCCESS:
-    
-            print(
-                "Prediction sent:",
-                payload
-            )
-    
-            return True
-    
-    
-        print(
-            "Prediction gagal dikirim"
-        )
-    
-        return False
     # ======================================================
-    # CREATE MQTT CLIENT
+    # CREATE CLIENT
     # ======================================================
 
     def _create_client(self):
-
 
         client = mqtt.Client(
             client_id=config.MQTT_CLIENT_ID
@@ -118,7 +50,6 @@ class MQTTService:
 
         if config.MQTT_USERNAME:
 
-
             client.username_pw_set(
                 config.MQTT_USERNAME,
                 config.MQTT_PASSWORD
@@ -133,7 +64,6 @@ class MQTTService:
     # CONNECT CALLBACK
     # ======================================================
 
-
     def _on_connect(
         self,
         client,
@@ -142,20 +72,14 @@ class MQTTService:
         rc
     ):
 
-
         if rc == 0:
-
 
             print(
                 "MQTT connected"
             )
 
-
             self._connected.set()
 
-
-
-            # menerima status ESP32
 
             client.subscribe(
                 "sampah/status"
@@ -163,7 +87,6 @@ class MQTTService:
 
 
         else:
-
 
             print(
                 "MQTT failed:",
@@ -179,9 +102,7 @@ class MQTTService:
         rc
     ):
 
-
         self._connected.clear()
-
 
         print(
             "MQTT disconnected"
@@ -190,9 +111,8 @@ class MQTTService:
 
 
     # ======================================================
-    # RECEIVE MESSAGE FROM ESP32
+    # RECEIVE MESSAGE
     # ======================================================
-
 
     def _on_message(
         self,
@@ -200,10 +120,6 @@ class MQTTService:
         userdata,
         message
     ):
-
-
-        topic = message.topic
-
 
         payload = (
             message.payload
@@ -216,7 +132,7 @@ class MQTTService:
         )
 
         print(
-            topic,
+            message.topic,
             payload
         )
 
@@ -226,8 +142,10 @@ class MQTTService:
     # START MQTT
     # ======================================================
 
-
-    def start(self):
+    def start(
+        self,
+        timeout=10
+    ):
 
 
         self.client.connect(
@@ -244,40 +162,72 @@ class MQTTService:
 
 
 
-    # ======================================================
-    # SEND COMMAND TO ESP32
-    # ======================================================
+        connected = (
+            self._connected.wait(
+                timeout
+            )
+        )
 
 
-    def publish_command(
+        if not connected:
+
+            print(
+                "MQTT connection timeout"
+            )
+
+
+
+        return connected
+
+
+
+    # ======================================================
+    # SEND AI RESULT TO ESP32
+    # ======================================================
+
+    def publish_prediction_command(
         self,
-        classification: str,
-        confidence: float
-    ):
+        prediction_result: dict[str, Any]
+    ) -> bool:
 
 
-        data = {
+        if not self.is_connected():
 
+            print(
+                "MQTT belum terhubung"
+            )
 
-            "class":
-            classification,
-
-
-            "confidence":
-            confidence
-
-
-        }
+            return False
 
 
 
         payload = json.dumps(
-            data
+            {
+                "class":
+                    prediction_result.get(
+                        "label",
+                        "Unknown"
+                    ),
+
+
+                "confidence":
+                    prediction_result.get(
+                        "confidence",
+                        0.0
+                    ),
+
+
+                "class_id":
+                    prediction_result.get(
+                        "class_id",
+                        -1
+                    )
+            }
         )
 
 
 
-        self.client.publish(
+        result = self.client.publish(
 
             "sampah/command",
 
@@ -289,38 +239,47 @@ class MQTTService:
 
 
 
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+
+
+            print(
+                "Prediction sent:",
+                payload
+            )
+
+
+            return True
+
+
+
         print(
-            "Command sent:",
-            payload
+            "Prediction gagal dikirim"
         )
 
-    
-   def publish_prediction(
-     self,
-     prediction_result: dict
-   ):
 
-     payload = json.dumps(
-         prediction_result
-     )
+        return False
 
-    self.client.publish(
-        "sampah/command",
-        payload,
-        qos=1
-    )
 
-    print(
-        "Prediction sent:",
-        payload
-    )
+
+    # ======================================================
+    # STATUS
+    # ======================================================
+
+    def is_connected(
+        self
+    ):
+
+        return self._connected.is_set()
+
+
 
     # ======================================================
     # STOP
     # ======================================================
 
-
-    def stop(self):
+    def stop(
+        self
+    ):
 
 
         if self._loop_started:
@@ -329,3 +288,6 @@ class MQTTService:
 
 
         self.client.disconnect()
+
+
+        self._connected.clear()
