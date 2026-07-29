@@ -27,7 +27,7 @@ MQTT_BROKER_HOST = os.getenv(
 MQTT_BROKER_PORT = int(
     os.getenv(
         "MQTT_BROKER_PORT",
-        "8883",
+        "1883",
     )
 )
 
@@ -76,7 +76,7 @@ RESULT_TOPIC = (
 )
 
 COMMAND_TOPIC = (
-    f"sampah/perintah/{DEVICE_ID}"
+    "sampah/command"
 )
 
 
