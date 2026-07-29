@@ -53,7 +53,7 @@ def main():
     mqtt_service = MQTTService()
 
     ai = InferenceService(
-        model_path="efficientnet_b0.tflite",
+        model_path="Paradigma B No Mix/efficientnet_b0.tflite",
         labels_path="labels.txt"
     )
 
