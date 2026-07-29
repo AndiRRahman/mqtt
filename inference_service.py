@@ -96,7 +96,7 @@ class InferenceService:
     # PREPROCESS IMAGE
     # ==========================================
 
-   def _preprocess(
+    def _preprocess(
         self,
         frame: np.ndarray,
     ):
