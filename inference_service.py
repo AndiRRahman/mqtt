@@ -92,7 +92,7 @@ class InferenceService:
 
         return labels
 
-
+    )
 
     # ==========================================
     # PREPROCESS IMAGE
