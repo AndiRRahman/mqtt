@@ -65,7 +65,7 @@ def format_classification_result(
 
 
 # ==================================================
-# LOAD ALL MODEL
+# LOAD MODEL
 # ==================================================
 
 def load_models():
@@ -112,6 +112,13 @@ def load_models():
 
 
 
+            print(
+                "Model ditemukan:",
+                filename
+            )
+
+
+
     if len(model_paths) == 0:
 
         raise RuntimeError(
@@ -121,20 +128,12 @@ def load_models():
 
 
     print(
-        "Model aktif:"
+        f"{len(model_paths)} model aktif"
     )
 
 
-    for model in model_paths:
 
-        print(
-            "-",
-            model
-        )
-
-
-
-    ai = InferenceService(
+    models = InferenceService(
 
         model_paths=model_paths,
 
@@ -143,9 +142,47 @@ def load_models():
     )
 
 
-    return ai
+    return models
 
 
+
+# ==================================================
+# PREDICT
+# ==================================================
+
+def predict_all_models(
+    models,
+    frame
+):
+
+    try:
+
+
+        prediction = models.predict_all(
+            frame
+        )
+
+
+        print(
+            "HASIL MODEL:",
+            prediction
+        )
+
+
+        return prediction
+
+
+
+    except Exception as error:
+
+
+        print(
+            "Inference error:",
+            error
+        )
+
+
+        return None
 
 
 
@@ -167,7 +204,7 @@ def main():
 
 
 
-    ai = load_models()
+    models = load_models()
 
 
 
@@ -192,6 +229,7 @@ def main():
         )
 
         print("=" * 60)
+
 
 
         print(
@@ -238,7 +276,10 @@ def main():
             current_time = time.monotonic()
 
 
-            status = "Scanning"
+
+            status = (
+                "Scanning"
+            )
 
 
 
@@ -249,58 +290,46 @@ def main():
             ):
 
 
+
                 last_prediction_time = current_time
 
 
 
-                try:
-
-
-                    prediction = ai.predict_all(
+                prediction = (
+                    predict_all_models(
+                        models,
                         frame
                     )
+                )
 
 
 
-                    if prediction:
+                if prediction:
 
 
-                        latest_prediction = prediction
-
-
-
-                        print(
-                            "HASIL AI:",
-                            prediction
-                        )
-
-
-                        status = (
-                            "Sampah terdeteksi"
-                        )
-
-
-
-                        if mqtt_service.is_connected():
-
-
-                            mqtt_service.publish_prediction_command(
-
-                                prediction
-
-                            )
-
-
-
-                except Exception as error:
+                    latest_prediction = (
+                        prediction
+                    )
 
 
                     print(
-                        "Inference error:",
-                        error
+                        "HASIL AKHIR:",
+                        prediction
                     )
 
 
+                    status = (
+                        "Sampah terdeteksi"
+                    )
+
+
+
+                    if mqtt_service.is_connected():
+
+
+                        mqtt_service.publish_prediction_command(
+                            prediction
+                        )
 
 
 
@@ -343,7 +372,6 @@ def main():
 
 
 
-
     except KeyboardInterrupt:
 
 
@@ -379,8 +407,6 @@ def main():
         print(
             "System selesai"
         )
-
-
 
 
 
