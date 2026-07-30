@@ -1,430 +1,447 @@
-#include <Arduino.h>
-#include <ArduinoJson.h>
+from __future__ import annotations
 
-#include "UltrasonicSensor.h"
-#include "StepperMotor.h"
+import os
+import time
+from typing import Any
 
-#include "wifi_manager.h"
-#include "mqtt_client.h"
+import config
 
-
-// ============================
-// WIFI
-// ============================
-
-const char* WIFI_SSID = "UTeM-IOT";
-
-const char* WIFI_PASSWORD = "!@utemIOT";
-
-
-WiFiManager wifi(
-    WIFI_SSID,
-    WIFI_PASSWORD
-);
+from camera_service import CameraService
+from mqtt_service import MQTTService
+from inference_service import InferenceService
+from presence_detector import PresenceDetector
 
 
 
-// ============================
-// MQTT
-// ============================
+def safe_float(
+    value: Any,
+    default: float = 0.0,
+) -> float:
 
-const char* MQTT_SERVER = "10.132.6.38";
+    try:
+        return float(value)
 
-const int MQTT_PORT = 1883;
-
-
-MQTTClient mqtt(
-    MQTT_SERVER,
-    MQTT_PORT,
-    "ESP32-SAMPAH"
-);
-
-
-
-// ============================
-// STEPPER
-// ============================
-
-const int STEPS_PER_REV = 2048;
-
-
-StepperMotor myStepper(
-    STEPS_PER_REV,
-    19,
-    22,
-    21,
-    23
-);
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return default
 
 
 
-// ============================
-// SENSOR
-// ============================
+def format_classification_result(
+    result: dict[str, Any] | None,
+) -> str:
 
-#define MAX_DISTANCE 200
+    if not result:
+        return "Belum ada hasil"
 
 
-UltrasonicSensor sensors[] =
-{
-
-    UltrasonicSensor(
-        1,
-        13,
-        12,
-        MAX_DISTANCE
-    ),
-
-    UltrasonicSensor(
-        2,
-        14,
-        27,
-        MAX_DISTANCE
-    ),
-
-    UltrasonicSensor(
-        3,
-        26,
-        25,
-        MAX_DISTANCE
-    ),
-
-    UltrasonicSensor(
-        4,
-        33,
-        32,
-        MAX_DISTANCE
-    ),
-
-    UltrasonicSensor(
-        5,
-        16,
-        17,
-        MAX_DISTANCE
+    label = result.get(
+        "label",
+        "Unknown"
     )
 
-};
 
+    confidence = safe_float(
+        result.get(
+            "confidence",
+            0.0
+        )
+    )
 
 
-// ============================
-// POSISI STEPPER
-// ============================
+    model = result.get(
+        "model",
+        "-"
+    )
 
-const int POS_HOME = 0;
 
-const int POS_PLASTIC = 1;
+    return (
+        f"{label} "
+        f"({confidence:.1%}) "
+        f"{model}"
+    )
 
-const int POS_PAPER = 2;
 
-const int POS_CARDBOARD = 3;
 
-const int POS_METAL = 4;
+def load_models():
 
-const int POS_FOOD = 5;
+    model_dir = "model"
 
+    models = []
 
 
-// =================================================
-// MQTT CALLBACK
-// =================================================
+    if not os.path.exists(model_dir):
 
-void receiveCommand(
-    String topic,
-    String message
-)
+        raise FileNotFoundError(
+            "Folder model tidak ditemukan"
+        )
 
-{
 
-    Serial.println();
+    for filename in sorted(
+        os.listdir(model_dir)
+    ):
 
-    Serial.println(
-        "=========================="
-    );
 
+        if filename.endswith(
+            ".tflite"
+        ):
 
-    Serial.println(
-        "MQTT COMMAND DITERIMA"
-    );
 
+            path = os.path.join(
+                model_dir,
+                filename
+            )
 
-    Serial.print(
-        "Topic : "
-    );
 
-    Serial.println(
-        topic
-    );
+            print(
+                "Loading model:",
+                filename
+            )
 
 
-    Serial.print(
-        "Payload : "
-    );
+            models.append(
+                {
+                    "name": filename,
+                    "model": InferenceService(
+                        model_path=path,
+                        labels_path="labels.txt"
+                    )
+                }
+            )
 
-    Serial.println(
-        message
-    );
 
 
+    if len(models) == 0:
 
-    StaticJsonDocument<256> doc;
+        raise RuntimeError(
+            "Tidak ada model TFLite"
+        )
 
 
+    print(
+        f"{len(models)} model aktif"
+    )
 
-    DeserializationError error =
-        deserializeJson(
-            doc,
-            message
-        );
 
+    return models
 
 
-    if(error)
-    {
 
-        Serial.println(
-            "JSON ERROR"
-        );
+def predict_all_models(
+    models,
+    frame
+):
 
-        return;
+    results = []
 
-    }
 
+    for item in models:
 
 
-    String kelas =
-        doc["class"];
+        name = item["name"]
 
+        model = item["model"]
 
 
-    float confidence =
-        doc["confidence"];
+        try:
 
+            prediction = model.predict(
+                frame
+            )
 
 
-    int class_id =
-        doc["class_id"];
+            prediction["model"] = name
 
 
+            results.append(
+                prediction
+            )
 
 
+            print(
+                name,
+                prediction
+            )
 
-    Serial.print(
-        "Class : "
-    );
 
-    Serial.println(
-        kelas
-    );
+        except Exception as error:
 
+            print(
+                f"{name} error:",
+                error
+            )
 
 
-    Serial.print(
-        "Confidence : "
-    );
 
-    Serial.println(
-        confidence
-    );
+    if not results:
 
+        return None
 
 
-    Serial.print(
-        "Class ID : "
-    );
 
-    Serial.println(
-        class_id
-    );
+    best = max(
+        results,
+        key=lambda x:
+        x.get(
+            "confidence",
+            0
+        )
+    )
 
 
+    return best
 
-    // =====================================
-    // CLASSIFICATION
-    // KE POSISI STEPPER
-    // =====================================
 
 
-    if(kelas == "Plastic")
-    {
+def main():
 
-        Serial.println(
-            "AKSI : PLASTIC"
-        );
+    config.validate_config()
 
 
-        myStepper.moveToPosition(
-            POS_PLASTIC
-        );
+    camera = CameraService()
 
-    }
 
+    mqtt_service = MQTTService()
 
 
-    else if(kelas == "Paper")
-    {
+    presence_detector = (
+        PresenceDetector(
+            threshold=5000
+        )
+    )
 
-        Serial.println(
-            "AKSI : PAPER"
-        );
 
+    models = load_models()
 
-        myStepper.moveToPosition(
-            POS_PAPER
-        );
 
-    }
 
+    prediction_interval = 2.0
 
+    last_prediction_time = 0.0
 
-    else if(kelas == "Cardboard")
-    {
 
-        Serial.println(
-            "AKSI : CARDBOARD"
-        );
+    latest_prediction = None
 
 
-        myStepper.moveToPosition(
-            POS_CARDBOARD
-        );
 
-    }
+    try:
 
+        print("=" * 60)
+        print(
+            "RASPBERRY PI AI SORTING SYSTEM"
+        )
+        print("=" * 60)
 
 
-    else if(kelas == "Metal")
-    {
+        print(
+            f"MQTT : "
+            f"{config.MQTT_BROKER_HOST}:"
+            f"{config.MQTT_BROKER_PORT}"
+        )
 
-        Serial.println(
-            "AKSI : METAL"
-        );
 
+        print("=" * 60)
 
-        myStepper.moveToPosition(
-            POS_METAL
-        );
 
-    }
 
+        camera.open()
 
 
-    else if(kelas == "Food")
-    {
+        mqtt_service.start()
 
-        Serial.println(
-            "AKSI : FOOD"
-        );
 
+        print(
+            "System berjalan"
+        )
 
-        myStepper.moveToPosition(
-            POS_FOOD
-        );
 
-    }
 
+        while True:
 
 
-    else if(kelas == "NO_OBJECT")
-    {
+            success, frame, camera_read_ms = (
+                camera.read_frame()
+            )
 
-        Serial.println(
-            "AKSI : TIDAK ADA SAMPAH"
-        );
 
+            if not success or frame is None:
 
-        myStepper.moveToPosition(
-            POS_HOME
-        );
+                continue
 
-    }
 
 
+            current_time = time.monotonic()
 
-    else
-    {
 
-        Serial.println(
-            "CLASS TIDAK DIKENALI"
-        );
+            status = (
+                "Scanning"
+            )
 
-    }
 
 
+            if (
+                current_time -
+                last_prediction_time
+                >= prediction_interval
+            ):
 
-    Serial.println(
-        "=========================="
-    );
 
-}
+                last_prediction_time = (
+                    current_time
+                )
 
 
 
-// ============================
-// SETUP
-// ============================
+                object_detected = (
+                    presence_detector
+                    .detect(frame)
+                )
 
-void setup()
 
-{
 
-    Serial.begin(
-        115200
-    );
+                if not object_detected:
 
 
-    delay(1000);
+                    latest_prediction = {
 
+                        "label":
+                        "NO_OBJECT",
 
+                        "confidence":
+                        1.0,
 
-    Serial.println(
-        "START ESP32 SAMPAH"
-    );
+                        "class_id":
+                        -1,
 
+                        "model":
+                        "presence_detector"
 
+                    }
 
-    wifi.begin();
 
+                    print(
+                        "Tidak ada objek"
+                    )
 
 
-    mqtt.begin();
+                    status = (
+                        "Tidak ada sampah"
+                    )
 
 
 
-    mqtt.setCallback(
-        receiveCommand
-    );
+                else:
 
 
+                    print(
+                        "Objek terdeteksi"
+                    )
 
-    mqtt.subscribe(
-        "sampah/command"
-    );
 
+                    prediction = (
+                        predict_all_models(
+                            models,
+                            frame
+                        )
+                    )
 
 
-    myStepper.init(
-        15
-    );
+                    if prediction:
 
 
+                        latest_prediction = (
+                            prediction
+                        )
 
-    Serial.println(
-        "ESP32 READY"
-    );
 
-}
+                        print(
+                            "HASIL AKHIR:",
+                            prediction
+                        )
 
 
+                        status = (
+                            "Sampah terdeteksi"
+                        )
 
-// ============================
-// LOOP
-// ============================
 
-void loop()
 
-{
+                if (
+                    mqtt_service.is_connected()
+                    and latest_prediction
+                ):
 
-    mqtt.loop();
 
-}
+                    mqtt_service.publish_prediction_command(
+                        latest_prediction
+                    )
+
+
+
+            ai_status = (
+                format_classification_result(
+                    latest_prediction
+                )
+            )
+
+
+            preview_status = (
+                f"{status} | "
+                f"AI: {ai_status}"
+            )
+
+
+            running = camera.show_preview(
+                frame,
+                preview_status
+            )
+
+
+
+            if not running:
+
+                print(
+                    "Preview dihentikan"
+                )
+
+                break
+
+
+
+    except KeyboardInterrupt:
+
+        print(
+            "\nProgram dihentikan"
+        )
+
+
+
+    except Exception as error:
+
+        print(
+            "System error:",
+            error
+        )
+
+        raise
+
+
+
+    finally:
+
+        mqtt_service.stop()
+
+        camera.close()
+
+
+        print(
+            "System selesai"
+        )
+
+
+
+if __name__ == "__main__":
+
+    main()
