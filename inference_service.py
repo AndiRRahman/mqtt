@@ -88,41 +88,44 @@ class InferenceService:
         self,
         frame
     ):
-
-
+    
+    
         image = cv2.resize(
             frame,
             self.input_size
         )
-
-
+    
+    
         image = cv2.cvtColor(
             image,
             cv2.COLOR_BGR2RGB
         )
-
-
+    
+    
         image = image.astype(
             np.float32
         )
-
-
-        # ImageNet normalization
-
+    
+    
         image = image / 255.0
-
-
+    
+    
+    
+        # HWC -> CHW
+        image = np.transpose(
+            image,
+            (2,0,1)
+        )
+    
+    
+        # tambah batch
         image = np.expand_dims(
             image,
             axis=0
         )
-
-
+    
+    
         return image
-
-
-
-
 
     # ======================================
     # SOFTMAX
