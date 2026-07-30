@@ -103,14 +103,14 @@ def load_models():
             models.append(
                 {
                     "name": filename,
-
                     "model": InferenceService(
-                        model_path=path,
+                        model_paths={
+                            filename: path
+                        },
                         labels_path="labels.txt"
                     )
                 }
             )
-
 
     if len(models) == 0:
 
