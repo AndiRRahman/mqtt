@@ -1,264 +1,396 @@
 from __future__ import annotations
 
-import json
-import threading
-from typing import Any
+import cv2
+import numpy as np
 
-import paho.mqtt.client as mqtt
+from pathlib import Path
 
-import config
-
-
-class MQTTService:
-
-
-    def __init__(self):
-
-        self._connected = threading.Event()
-
-        self._loop_started = False
-
-        self.client = self._create_client()
+from ai_edge_litert.interpreter import Interpreter
 
 
 
-    # ======================================================
-    # CREATE CLIENT
-    # ======================================================
-
-    def _create_client(self):
-
-        client = mqtt.Client(
-            client_id=config.MQTT_CLIENT_ID
-        )
+class InferenceService:
 
 
-        client.on_connect = (
-            self._on_connect
-        )
+    TARGET_SIZE = (
+        224,
+        224
+    )
 
 
-        client.on_disconnect = (
-            self._on_disconnect
-        )
+    IMAGE_NET_MEAN = np.array(
+        [
+            0.485,
+            0.456,
+            0.406
+        ],
+        dtype=np.float32
+    )
 
 
-        client.on_message = (
-            self._on_message
-        )
-
-
-        if config.MQTT_USERNAME:
-
-            client.username_pw_set(
-                config.MQTT_USERNAME,
-                config.MQTT_PASSWORD
-            )
-
-
-        return client
+    IMAGE_NET_STD = np.array(
+        [
+            0.229,
+            0.224,
+            0.225
+        ],
+        dtype=np.float32
+    )
 
 
 
-    # ======================================================
-    # CONNECT CALLBACK
-    # ======================================================
-
-    def _on_connect(
+    def __init__(
         self,
-        client,
-        userdata,
-        flags,
-        rc
-    ):
-
-        if rc == 0:
-
-            print(
-                "MQTT connected"
-            )
-
-            self._connected.set()
-
-
-            client.subscribe(
-                "sampah/status"
-            )
-
-
-        else:
-
-            print(
-                "MQTT failed:",
-                rc
-            )
-
-
-
-    def _on_disconnect(
-        self,
-        client,
-        userdata,
-        rc
-    ):
-
-        self._connected.clear()
-
-        print(
-            "MQTT disconnected"
-        )
-
-
-
-    # ======================================================
-    # RECEIVE MESSAGE
-    # ======================================================
-
-    def _on_message(
-        self,
-        client,
-        userdata,
-        message
-    ):
-
-        payload = (
-            message.payload
-            .decode()
-        )
-
-
-        print(
-            "MQTT MESSAGE"
-        )
-
-        print(
-            message.topic,
-            payload
-        )
-
-
-
-    # ======================================================
-    # START MQTT
-    # ======================================================
-
-    def start(
-        self,
-        timeout=10
+        model_paths: dict[str, str],
+        labels_path: str
     ):
 
 
-        self.client.connect(
-            config.MQTT_BROKER_HOST,
-            config.MQTT_BROKER_PORT,
-            60
+        self.models = {}
+
+
+        self.labels = self.load_labels(
+            labels_path
         )
 
 
-        self.client.loop_start()
-
-
-        self._loop_started = True
-
-
-
-        connected = (
-            self._connected.wait(
-                timeout
-            )
+        self.load_models(
+            model_paths
         )
 
 
-        if not connected:
 
-            print(
-                "MQTT connection timeout"
-            )
+    # ======================================
+    # LOAD LABEL
+    # ======================================
 
-
-
-        return connected
-
-
-
-    # ======================================================
-    # SEND AI RESULT TO ESP32
-    # ======================================================
-
-    def publish_prediction_command(
+    def load_labels(
         self,
-        prediction_result: dict[str, Any]
-    ) -> bool:
-    
-        if not self.is_connected():
-    
+        path
+    ):
+
+
+        with open(
+            path,
+            "r"
+        ) as file:
+
+            labels = [
+                line.strip()
+                for line in file.readlines()
+            ]
+
+
+        return labels
+
+
+
+
+    # ======================================
+    # LOAD TFLITE MODELS
+    # ======================================
+
+    def load_models(
+        self,
+        model_paths
+    ):
+
+
+        for name, path in model_paths.items():
+
+
             print(
-                "MQTT belum terhubung"
+                f"Loading {name}"
             )
-    
-            return False
-    
-    
-        payload = json.dumps(
-            {
-                "class": prediction_result.get(
-                    "label",
-                    "NO_OBJECT"
+
+
+            interpreter = Interpreter(
+                model_path=str(
+                    Path(path)
                 )
-            }
-        )
-    
-    
-        result = self.client.publish(
-            "sampah/command",
-            payload,
-            qos=1
-        )
-    
-    
-        if result.rc == mqtt.MQTT_ERR_SUCCESS:
-    
-            print(
-                "Prediction sent:",
-                payload
             )
-    
-            return True
-    
-    
-        print(
-            "Prediction gagal dikirim"
+
+
+            interpreter.allocate_tensors()
+
+
+            input_details = (
+                interpreter
+                .get_input_details()
+            )
+
+
+            output_details = (
+                interpreter
+                .get_output_details()
+            )
+
+
+
+            self.models[name] = {
+
+                "interpreter":
+                    interpreter,
+
+
+                "input":
+                    input_details,
+
+
+                "output":
+                    output_details
+
+            }
+
+
+            print(
+                f"{name} loaded"
+            )
+
+
+
+    # ======================================
+    # PREPROCESS IMAGE
+    # ======================================
+
+    def preprocess(
+        self,
+        frame
+    ):
+
+
+        image = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2RGB
         )
-    
-        return False
 
-    # ======================================================
-    # STATUS
-    # ======================================================
 
-    def is_connected(
-        self
+        image = cv2.resize(
+            image,
+            self.TARGET_SIZE
+        )
+
+
+        image = (
+            image.astype(
+                np.float32
+            )
+            /
+            255.0
+        )
+
+
+        image = (
+            image -
+            self.IMAGE_NET_MEAN
+        ) / self.IMAGE_NET_STD
+
+
+
+        image = np.expand_dims(
+            image,
+            axis=0
+        )
+
+
+        return image.astype(
+            np.float32
+        )
+
+
+
+    # ======================================
+    # SOFTMAX
+    # ======================================
+
+    def softmax(
+        self,
+        x
     ):
 
-        return self._connected.is_set()
+
+        exp = np.exp(
+            x -
+            np.max(x)
+        )
+
+
+        return (
+            exp /
+            np.sum(exp)
+        )
 
 
 
-    # ======================================================
-    # STOP
-    # ======================================================
+    # ======================================
+    # SINGLE MODEL PREDICTION
+    # ======================================
 
-    def stop(
-        self
+    def predict_model(
+        self,
+        model_name,
+        image
     ):
 
 
-        if self._loop_started:
-
-            self.client.loop_stop()
-
-
-        self.client.disconnect()
+        model = self.models[
+            model_name
+        ]
 
 
-        self._connected.clear()
+        interpreter = model[
+            "interpreter"
+        ]
+
+
+        input_index = model[
+            "input"
+        ][0]["index"]
+
+
+        output_index = model[
+            "output"
+        ][0]["index"]
+
+
+
+        interpreter.set_tensor(
+            input_index,
+            image
+        )
+
+
+        interpreter.invoke()
+
+
+
+        output = interpreter.get_tensor(
+            output_index
+        )[0]
+
+
+
+        probabilities = self.softmax(
+            output
+        )
+
+
+        return probabilities
+
+
+
+    # ======================================
+    # ENSEMBLE SOFT VOTING
+    # ======================================
+
+    def predict(
+        self,
+        frame
+    ):
+
+
+        image = self.preprocess(
+            frame
+        )
+
+
+
+        all_predictions = []
+
+
+
+        for name in self.models:
+
+
+            prediction = (
+                self.predict_model(
+                    name,
+                    image
+                )
+            )
+
+
+            all_predictions.append(
+                prediction
+            )
+
+
+
+            print(
+                name,
+                "done"
+            )
+
+
+
+        # rata-rata probabilitas
+
+        ensemble_probability = (
+            np.mean(
+                all_predictions,
+                axis=0
+            )
+        )
+
+
+
+        class_id = int(
+            np.argmax(
+                ensemble_probability
+            )
+        )
+
+
+
+        confidence = float(
+            ensemble_probability[
+                class_id
+            ]
+        )
+
+
+
+        label = self.labels[
+            class_id
+        ]
+
+
+
+        probability_dict = {}
+
+
+
+        for i, name in enumerate(
+            self.labels
+        ):
+
+            probability_dict[name] = (
+                float(
+                    ensemble_probability[i]
+                )
+            )
+
+
+
+        result = {
+
+            "label":
+                label,
+
+
+            "class_id":
+                class_id,
+
+
+            "confidence":
+                confidence,
+
+
+            "probabilities":
+                probability_dict
+
+        }
+
+
+
+        return result
