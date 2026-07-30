@@ -12,7 +12,6 @@ from inference_service import InferenceService
 from presence_detector import PresenceDetector
 
 
-
 def safe_float(
     value: Any,
     default: float = 0.0,
@@ -34,7 +33,6 @@ def format_classification_result(
 ) -> str:
 
     if not result:
-
         return "Belum ada hasil"
 
 
@@ -52,20 +50,25 @@ def format_classification_result(
     )
 
 
+    model = result.get(
+        "model",
+        "-"
+    )
+
+
     return (
         f"{label} "
-        f"({confidence:.1%})"
+        f"({confidence:.1%}) "
+        f"{model}"
     )
 
 
 
-# ==================================================
-# LOAD ALL MODEL FOR SOFT VOTING
-# ==================================================
-
-def load_ai_model():
+def load_models():
 
     model_dir = "Paradigma B No Mix"
+
+    models = []
 
 
     if not os.path.exists(model_dir):
@@ -73,11 +76,6 @@ def load_ai_model():
         raise FileNotFoundError(
             "Folder model tidak ditemukan"
         )
-
-
-
-    model_paths = {}
-
 
 
     for filename in sorted(
@@ -90,94 +88,135 @@ def load_ai_model():
         ):
 
 
-            model_name = filename.replace(
-                ".tflite",
-                ""
-            )
-
-
-            model_paths[
-                model_name
-            ] = os.path.join(
+            path = os.path.join(
                 model_dir,
                 filename
             )
 
 
+            print(
+                "Loading model:",
+                filename
+            )
 
-    if len(model_paths) == 0:
+
+            models.append(
+                {
+                    "name": filename,
+
+                    "model": InferenceService(
+                        model_path=path,
+                        labels_path="labels.txt"
+                    )
+                }
+            )
+
+
+    if len(models) == 0:
 
         raise RuntimeError(
-            "Model TFLite tidak ditemukan"
+            "Tidak ada model TFLite"
         )
-
 
 
     print(
-        "Model aktif:"
+        f"{len(models)} model aktif"
     )
 
 
-    for model in model_paths:
+    return models
 
-        print(
-            "-",
-            model
+
+
+def predict_all_models(
+    models,
+    frame
+):
+
+    results = []
+
+
+    for item in models:
+
+
+        name = item["name"]
+
+        model = item["model"]
+
+
+        try:
+
+            prediction = model.predict(
+                frame
+            )
+
+
+            prediction["model"] = name
+
+
+            results.append(
+                prediction
+            )
+
+
+            print(
+                name,
+                prediction
+            )
+
+
+        except Exception as error:
+
+            print(
+                f"{name} error:",
+                error
+            )
+
+
+
+    if not results:
+
+        return None
+
+
+
+    best = max(
+        results,
+        key=lambda x:
+        x.get(
+            "confidence",
+            0
         )
-
-
-
-    ai = InferenceService(
-
-        model_paths=model_paths,
-
-        labels_path="labels.txt"
-
     )
 
 
-    return ai
+    return best
 
 
-
-
-
-# ==================================================
-# MAIN
-# ==================================================
 
 def main():
 
-
     config.validate_config()
-
 
 
     camera = CameraService()
 
 
-
     mqtt_service = MQTTService()
 
 
-
     presence_detector = PresenceDetector(
-
-        threshold=20000
-
+        threshold=5000
     )
 
 
-
-    ai = load_ai_model()
+    models = load_models()
 
 
 
     prediction_interval = 2.0
 
-
     last_prediction_time = 0.0
-
 
 
     latest_prediction = None
@@ -186,7 +225,6 @@ def main():
 
     try:
 
-
         print("=" * 60)
 
         print(
@@ -194,7 +232,6 @@ def main():
         )
 
         print("=" * 60)
-
 
 
         print(
@@ -211,9 +248,7 @@ def main():
         camera.open()
 
 
-
         mqtt_service.start()
-
 
 
         print(
@@ -225,13 +260,9 @@ def main():
         while True:
 
 
-
             success, frame, camera_read_ms = (
-
                 camera.read_frame()
-
             )
-
 
 
             if not success or frame is None:
@@ -243,46 +274,27 @@ def main():
             current_time = time.monotonic()
 
 
-
             status = "Scanning"
 
 
 
-            # ======================================
-            # PREDICTION INTERVAL
-            # ======================================
-
-
             if (
-
                 current_time -
                 last_prediction_time
-
-                >=
-
-                prediction_interval
-
+                >= prediction_interval
             ):
-
 
 
                 last_prediction_time = current_time
 
 
 
-                # ==================================
-                # CHECK OBJECT EXISTENCE
-                # ==================================
+                object_detected = (
+                    presence_detector.detect(
+                        frame
+                    )
+                )
 
-
-                # object_detected = (
-
-                #     presence_detector.detect(
-                #         frame
-                #     )
-
-                # )
-                object_detected = True
 
 
                 if not object_detected:
@@ -290,27 +302,24 @@ def main():
 
                     latest_prediction = {
 
-
                         "label":
                         "NO_OBJECT",
-
 
                         "confidence":
                         1.0,
 
-
                         "class_id":
-                        -1
+                        -1,
 
+                        "model":
+                        "presence_detector"
 
                     }
 
 
-
                     print(
-                        "Tidak ada sampah"
+                        "Tidak ada objek"
                     )
-
 
 
                     status = (
@@ -322,37 +331,29 @@ def main():
                 else:
 
 
-
                     print(
                         "Objek terdeteksi"
                     )
 
 
-
-                    try:
-
-
-                        prediction = ai.predict(
+                    prediction = (
+                        predict_all_models(
+                            models,
                             frame
                         )
+                    )
 
 
-
-                        latest_prediction = (
-                            prediction
-                        )
+                    if prediction:
 
 
-
-                        print(
-                            "\nHASIL SOFT VOTING:"
-                        )
+                        latest_prediction = prediction
 
 
                         print(
+                            "HASIL AKHIR:",
                             prediction
                         )
-
 
 
                         status = (
@@ -361,86 +362,38 @@ def main():
 
 
 
-                    except Exception as error:
-
-
-                        print(
-                            "Inference error:",
-                            error
-                        )
-
-
-
-                        continue
-
-
-
-
-
-                # ==================================
-                # SEND TO ESP32
-                # ==================================
-
-
                 if (
-
                     mqtt_service.is_connected()
-
-                    and
-
-                    latest_prediction
-
+                    and latest_prediction
                 ):
 
 
                     mqtt_service.publish_prediction_command(
-
                         latest_prediction
-
                     )
 
 
 
-
-
-            # ======================================
-            # DISPLAY
-            # ======================================
-
-
             ai_status = (
-
                 format_classification_result(
-
                     latest_prediction
-
                 )
-
             )
-
 
 
             preview_status = (
-
                 f"{status} | "
                 f"AI: {ai_status}"
-
             )
-
 
 
             running = camera.show_preview(
-
                 frame,
-
                 preview_status
-
             )
 
 
-
             if not running:
-
 
                 print(
                     "Preview dihentikan"
@@ -450,10 +403,7 @@ def main():
 
 
 
-
-
     except KeyboardInterrupt:
-
 
         print(
             "\nProgram dihentikan"
@@ -463,12 +413,10 @@ def main():
 
     except Exception as error:
 
-
         print(
             "System error:",
             error
         )
-
 
         raise
 
@@ -476,19 +424,14 @@ def main():
 
     finally:
 
-
         mqtt_service.stop()
 
-
         camera.close()
-
 
 
         print(
             "System selesai"
         )
-
-
 
 
 
