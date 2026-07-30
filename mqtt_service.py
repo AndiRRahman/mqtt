@@ -1,396 +1,286 @@
 from __future__ import annotations
 
-import cv2
-import numpy as np
+import json
+import threading
+from typing import Any, Callable
 
-from pathlib import Path
+import paho.mqtt.client as mqtt
 
-from ai_edge_litert.interpreter import Interpreter
-
-
-
-class InferenceService:
+import config
 
 
-    TARGET_SIZE = (
-        224,
-        224
-    )
+
+ResultCallback = Callable[
+    [dict[str, Any]],
+    None
+]
 
 
-    IMAGE_NET_MEAN = np.array(
-        [
-            0.485,
-            0.456,
-            0.406
-        ],
-        dtype=np.float32
-    )
 
-
-    IMAGE_NET_STD = np.array(
-        [
-            0.229,
-            0.224,
-            0.225
-        ],
-        dtype=np.float32
-    )
-
+class MQTTService:
 
 
     def __init__(
         self,
-        model_paths: dict[str, str],
-        labels_path: str
-    ):
+        result_callback: ResultCallback | None = None,
+    ) -> None:
 
 
-        self.models = {}
-
-
-        self.labels = self.load_labels(
-            labels_path
+        self.result_callback = (
+            result_callback
         )
 
 
-        self.load_models(
-            model_paths
+        self._connected = (
+            threading.Event()
+        )
+
+
+        self._loop_started = False
+
+
+        self.client = (
+            self._create_client()
         )
 
 
 
-    # ======================================
-    # LOAD LABEL
-    # ======================================
+    # =====================================
+    # CREATE CLIENT
+    # =====================================
 
-    def load_labels(
+    def _create_client(self):
+
+
+        client = mqtt.Client(
+            client_id=
+            config.MQTT_CLIENT_ID
+        )
+
+
+        client.on_connect = (
+            self._on_connect
+        )
+
+
+        client.on_disconnect = (
+            self._on_disconnect
+        )
+
+
+        client.on_message = (
+            self._on_message
+        )
+
+
+        if config.MQTT_USERNAME:
+
+            client.username_pw_set(
+                config.MQTT_USERNAME,
+                config.MQTT_PASSWORD
+            )
+
+
+        return client
+
+
+
+    # =====================================
+    # CONNECT CALLBACK
+    # =====================================
+
+    def _on_connect(
         self,
-        path
+        client,
+        userdata,
+        flags,
+        rc
     ):
 
 
-        with open(
-            path,
-            "r"
-        ) as file:
-
-            labels = [
-                line.strip()
-                for line in file.readlines()
-            ]
-
-
-        return labels
-
-
-
-
-    # ======================================
-    # LOAD TFLITE MODELS
-    # ======================================
-
-    def load_models(
-        self,
-        model_paths
-    ):
-
-
-        for name, path in model_paths.items():
+        if rc == 0:
 
 
             print(
-                f"Loading {name}"
+                "MQTT connected"
             )
 
 
-            interpreter = Interpreter(
-                model_path=str(
-                    Path(path)
-                )
-            )
-
-
-            interpreter.allocate_tensors()
-
-
-            input_details = (
-                interpreter
-                .get_input_details()
-            )
-
-
-            output_details = (
-                interpreter
-                .get_output_details()
-            )
+            self._connected.set()
 
 
 
-            self.models[name] = {
-
-                "interpreter":
-                    interpreter,
-
-
-                "input":
-                    input_details,
-
-
-                "output":
-                    output_details
-
-            }
+        else:
 
 
             print(
-                f"{name} loaded"
+                "MQTT failed:",
+                rc
             )
 
 
 
-    # ======================================
-    # PREPROCESS IMAGE
-    # ======================================
-
-    def preprocess(
+    def _on_disconnect(
         self,
-        frame
+        client,
+        userdata,
+        rc
     ):
 
 
-        image = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2RGB
-        )
+        self._connected.clear()
 
 
-        image = cv2.resize(
-            image,
-            self.TARGET_SIZE
-        )
-
-
-        image = (
-            image.astype(
-                np.float32
-            )
-            /
-            255.0
-        )
-
-
-        image = (
-            image -
-            self.IMAGE_NET_MEAN
-        ) / self.IMAGE_NET_STD
-
-
-
-        image = np.expand_dims(
-            image,
-            axis=0
-        )
-
-
-        return image.astype(
-            np.float32
+        print(
+            "MQTT disconnected"
         )
 
 
 
-    # ======================================
-    # SOFTMAX
-    # ======================================
+    # =====================================
+    # RECEIVE MESSAGE
+    # =====================================
 
-    def softmax(
+    def _on_message(
         self,
-        x
+        client,
+        userdata,
+        message
     ):
 
 
-        exp = np.exp(
-            x -
-            np.max(x)
+        payload = (
+            message.payload
+            .decode()
         )
+
+
+        print(
+            "MQTT MESSAGE:",
+            message.topic,
+            payload
+        )
+
+
+
+    # =====================================
+    # START
+    # =====================================
+
+    def start(
+        self
+    ):
+
+
+        self.client.connect(
+            config.MQTT_BROKER_HOST,
+            config.MQTT_BROKER_PORT,
+            config.MQTT_KEEPALIVE_SECONDS
+        )
+
+
+        self.client.loop_start()
+
+
+        self._loop_started = True
+
+
+
+    # =====================================
+    # STATUS
+    # =====================================
+
+    def is_connected(
+        self
+    ):
 
 
         return (
-            exp /
-            np.sum(exp)
+            self._connected.is_set()
         )
 
 
 
-    # ======================================
-    # SINGLE MODEL PREDICTION
-    # ======================================
+    # =====================================
+    # SEND RESULT TO ESP32
+    # =====================================
 
-    def predict_model(
+    def publish_prediction_command(
         self,
-        model_name,
-        image
+        prediction_result: dict[str, Any]
     ):
 
 
-        model = self.models[
-            model_name
-        ]
+        if not self.is_connected():
 
-
-        interpreter = model[
-            "interpreter"
-        ]
-
-
-        input_index = model[
-            "input"
-        ][0]["index"]
-
-
-        output_index = model[
-            "output"
-        ][0]["index"]
-
-
-
-        interpreter.set_tensor(
-            input_index,
-            image
-        )
-
-
-        interpreter.invoke()
-
-
-
-        output = interpreter.get_tensor(
-            output_index
-        )[0]
-
-
-
-        probabilities = self.softmax(
-            output
-        )
-
-
-        return probabilities
-
-
-
-    # ======================================
-    # ENSEMBLE SOFT VOTING
-    # ======================================
-
-    def predict(
-        self,
-        frame
-    ):
-
-
-        image = self.preprocess(
-            frame
-        )
-
-
-
-        all_predictions = []
-
-
-
-        for name in self.models:
-
-
-            prediction = (
-                self.predict_model(
-                    name,
-                    image
-                )
+            print(
+                "MQTT belum terhubung"
             )
 
+            return False
 
-            all_predictions.append(
-                prediction
-            )
 
+
+        label = prediction_result.get(
+            "label",
+            "NO_OBJECT"
+        )
+
+
+        payload = json.dumps(
+            {
+                "class": label
+            }
+        )
+
+
+
+        result = self.client.publish(
+            "sampah/command",
+            payload,
+            qos=1
+        )
+
+
+
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
 
 
             print(
-                name,
-                "done"
+                "Prediction sent:",
+                payload
             )
 
 
-
-        # rata-rata probabilitas
-
-        ensemble_probability = (
-            np.mean(
-                all_predictions,
-                axis=0
-            )
-        )
+            return True
 
 
 
-        class_id = int(
-            np.argmax(
-                ensemble_probability
-            )
-        )
+        else:
 
 
-
-        confidence = float(
-            ensemble_probability[
-                class_id
-            ]
-        )
-
-
-
-        label = self.labels[
-            class_id
-        ]
-
-
-
-        probability_dict = {}
-
-
-
-        for i, name in enumerate(
-            self.labels
-        ):
-
-            probability_dict[name] = (
-                float(
-                    ensemble_probability[i]
-                )
+            print(
+                "Publish gagal"
             )
 
 
-
-        result = {
-
-            "label":
-                label,
-
-
-            "class_id":
-                class_id,
-
-
-            "confidence":
-                confidence,
-
-
-            "probabilities":
-                probability_dict
-
-        }
+            return False
 
 
 
-        return result
+    # =====================================
+    # STOP
+    # =====================================
+
+    def stop(
+        self
+    ):
+
+
+        if self._loop_started:
+
+            self.client.loop_stop()
+
+
+
+        self.client.disconnect()
