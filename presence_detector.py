@@ -1,17 +1,16 @@
-from __future__ import annotations
-
 import cv2
 import numpy as np
 
 
 class PresenceDetector:
 
+
     def __init__(
         self,
-        threshold: int = 5000
+        threshold=5000
     ):
 
-        self.background = None
+        self.previous_frame = None
         self.threshold = threshold
 
 
@@ -19,7 +18,7 @@ class PresenceDetector:
     def detect(
         self,
         frame
-    ) -> bool:
+    ):
 
 
         gray = cv2.cvtColor(
@@ -35,21 +34,22 @@ class PresenceDetector:
         )
 
 
-        if self.background is None:
 
-            self.background = gray
+        if self.previous_frame is None:
+
+            self.previous_frame = gray
 
             return False
 
 
 
         difference = cv2.absdiff(
-            self.background,
+            self.previous_frame,
             gray
         )
 
 
-        _, mask = cv2.threshold(
+        _, thresh = cv2.threshold(
             difference,
             25,
             255,
@@ -57,9 +57,19 @@ class PresenceDetector:
         )
 
 
-        pixels = cv2.countNonZero(
-            mask
+        changed_pixels = np.sum(
+            thresh
         )
 
 
-        return pixels > self.threshold
+
+        self.previous_frame = gray
+
+
+
+        if changed_pixels > self.threshold:
+
+            return True
+
+
+        return False
