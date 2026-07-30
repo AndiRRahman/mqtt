@@ -67,7 +67,7 @@ def format_classification_result(
 
 def load_models():
 
-    model_dir = "model"
+    model_dir = "Paradigma B No Mix"
 
     models = []
 
