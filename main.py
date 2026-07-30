@@ -9,7 +9,7 @@ import config
 from camera_service import CameraService
 from mqtt_service import MQTTService
 from inference_service import InferenceService
-
+from presence_detector import PresenceDetector
 
 
 def safe_float(
@@ -191,33 +191,18 @@ def predict_all_models(
 # ==================================================
 
 def main():
-
-
     config.validate_config()
-
-
-
     camera = CameraService()
-
-
     mqtt_service = MQTTService()
 
-
+    presence_detector = PresenceDetector(
+        threshold=5000
+    )
 
     models = load_models()
-
-
-
     prediction_interval = 2.0
-
-
     last_prediction_time = 0.0
-
-
-
     latest_prediction = None
-
-
 
     try:
 
@@ -238,45 +223,22 @@ def main():
             f"{config.MQTT_BROKER_PORT}"
         )
 
-
         print("=" * 60)
-
-
-
         camera.open()
-
-
-
         mqtt_service.start()
-
-
-
         print(
             "System berjalan"
         )
 
-
-
         while True:
-
-
-
             success, frame, camera_read_ms = (
                 camera.read_frame()
             )
 
-
-
             if not success or frame is None:
 
                 continue
-
-
-
             current_time = time.monotonic()
-
-
-
             status = (
                 "Scanning"
             )
@@ -288,47 +250,98 @@ def main():
                 last_prediction_time
                 >= prediction_interval
             ):
-
-
-
+            
+            
                 last_prediction_time = current_time
-
-
-
-                prediction = (
-                    predict_all_models(
-                        models,
+            
+            
+            
+                object_detected = (
+                    presence_detector.detect(
                         frame
                     )
                 )
-
-
-
-                if prediction:
-
-
-                    latest_prediction = (
-                        prediction
+            
+            
+            
+                if object_detected:
+            
+            
+                    prediction = (
+                        predict_all_models(
+                            models,
+                            frame
+                        )
                     )
-
-
-                    print(
-                        "HASIL AKHIR:",
-                        prediction
-                    )
-
-
-                    status = (
-                        "Sampah terdeteksi"
-                    )
-
-
-
-                    if mqtt_service.is_connected():
-
-
-                        mqtt_service.publish_prediction_command(
+            
+            
+                    if prediction:
+            
+            
+                        latest_prediction = (
                             prediction
+                        )
+            
+            
+                        print(
+                            "HASIL AKHIR:",
+                            prediction
+                        )
+            
+            
+                        status = (
+                            "Sampah terdeteksi"
+                        )
+            
+            
+                        if mqtt_service.is_connected():
+            
+            
+                            mqtt_service.publish_prediction_command(
+                                prediction
+                            )
+            
+            
+            
+                else:
+            
+            
+                    latest_prediction = {
+            
+            
+                        "label":
+                        "NO_OBJECT",
+            
+            
+                        "confidence":
+                        1.0,
+            
+            
+                        "class_id":
+                        -1,
+            
+            
+                        "model":
+                        "presence_detector"
+            
+                    }
+            
+            
+                    print(
+                        "Tidak ada sampah"
+                    )
+            
+            
+                    status = (
+                        "Tidak ada sampah"
+                    )
+            
+            
+                    if mqtt_service.is_connected():
+            
+            
+                        mqtt_service.publish_prediction_command(
+                            latest_prediction
                         )
 
 
