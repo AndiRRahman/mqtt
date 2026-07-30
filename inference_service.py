@@ -326,5 +326,41 @@ class InferenceService:
             best_result
         )
     
-    
+            # ===============================
+        # CONFIDENCE THRESHOLD
+        # ===============================
+
+        CONFIDENCE_THRESHOLD = 0.70
+
+
+        if (
+            best_result is None
+            or
+            best_result["confidence"] < CONFIDENCE_THRESHOLD
+        ):
+
+
+            return {
+
+                "label":
+                    "NO_OBJECT",
+
+                "confidence":
+                    float(
+                        best_result["confidence"]
+                    )
+                    if best_result
+                    else 0.0,
+
+                "class_id":
+                    -1,
+
+                "model":
+                    "confidence_threshold"
+
+            }
+
+
+
+        return best_result
         return best_result
