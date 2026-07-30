@@ -275,14 +275,14 @@ def main():
                 # ==================================
 
 
-                object_detected = (
+                # object_detected = (
 
-                    presence_detector.detect(
-                        frame
-                    )
+                #     presence_detector.detect(
+                #         frame
+                #     )
 
-                )
-
+                # )
+                object_detected = True
 
 
                 if not object_detected:
