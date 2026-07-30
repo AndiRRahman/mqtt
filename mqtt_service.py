@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Any, Callable
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
@@ -10,51 +10,23 @@ import config
 
 
 
-ResultCallback = Callable[
-    [dict[str, Any]],
-    None
-]
-
-
-
 class MQTTService:
 
 
-    def __init__(
-        self,
-        result_callback: ResultCallback | None = None,
-    ) -> None:
+    def __init__(self):
 
-
-        self.result_callback = (
-            result_callback
-        )
-
-
-        self._connected = (
-            threading.Event()
-        )
-
+        self._connected = threading.Event()
 
         self._loop_started = False
 
-
-        self.client = (
-            self._create_client()
-        )
+        self.client = self._create_client()
 
 
-
-    # =====================================
-    # CREATE CLIENT
-    # =====================================
 
     def _create_client(self):
 
-
         client = mqtt.Client(
-            client_id=
-            config.MQTT_CLIENT_ID
+            client_id=config.MQTT_CLIENT_ID
         )
 
 
@@ -62,11 +34,9 @@ class MQTTService:
             self._on_connect
         )
 
-
         client.on_disconnect = (
             self._on_disconnect
         )
-
 
         client.on_message = (
             self._on_message
@@ -85,10 +55,6 @@ class MQTTService:
 
 
 
-    # =====================================
-    # CONNECT CALLBACK
-    # =====================================
-
     def _on_connect(
         self,
         client,
@@ -100,18 +66,19 @@ class MQTTService:
 
         if rc == 0:
 
-
             print(
                 "MQTT connected"
             )
 
-
             self._connected.set()
 
 
+            client.subscribe(
+                "sampah/status"
+            )
+
 
         else:
-
 
             print(
                 "MQTT failed:",
@@ -137,10 +104,6 @@ class MQTTService:
 
 
 
-    # =====================================
-    # RECEIVE MESSAGE
-    # =====================================
-
     def _on_message(
         self,
         client,
@@ -150,8 +113,7 @@ class MQTTService:
 
 
         payload = (
-            message.payload
-            .decode()
+            message.payload.decode()
         )
 
 
@@ -163,47 +125,28 @@ class MQTTService:
 
 
 
-    # =====================================
-    # START
-    # =====================================
-
-    def start(
-        self
-    ):
-
+    def start(self):
 
         self.client.connect(
             config.MQTT_BROKER_HOST,
             config.MQTT_BROKER_PORT,
-            config.MQTT_KEEPALIVE_SECONDS
+            60
         )
 
 
         self.client.loop_start()
 
-
         self._loop_started = True
 
 
-
-    # =====================================
-    # STATUS
-    # =====================================
 
     def is_connected(
         self
     ):
 
-
-        return (
-            self._connected.is_set()
-        )
+        return self._connected.is_set()
 
 
-
-    # =====================================
-    # SEND RESULT TO ESP32
-    # =====================================
 
     def publish_prediction_command(
         self,
@@ -221,15 +164,13 @@ class MQTTService:
 
 
 
-        label = prediction_result.get(
-            "label",
-            "NO_OBJECT"
-        )
-
-
         payload = json.dumps(
             {
-                "class": label
+                "class":
+                prediction_result.get(
+                    "label",
+                    "NO_OBJECT"
+                )
             }
         )
 
@@ -245,36 +186,23 @@ class MQTTService:
 
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
 
-
             print(
                 "Prediction sent:",
                 payload
             )
 
-
             return True
 
 
+        print(
+            "Prediction gagal dikirim"
+        )
 
-        else:
-
-
-            print(
-                "Publish gagal"
-            )
-
-
-            return False
+        return False
 
 
 
-    # =====================================
-    # STOP
-    # =====================================
-
-    def stop(
-        self
-    ):
+    def stop(self):
 
 
         if self._loop_started:
@@ -282,5 +210,6 @@ class MQTTService:
             self.client.loop_stop()
 
 
-
         self.client.disconnect()
+
+        self._connected.clear()
