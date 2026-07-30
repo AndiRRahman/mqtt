@@ -10,7 +10,6 @@ class PresenceDetector:
         threshold=5000
     ):
 
-        self.previous_frame = None
         self.threshold = threshold
 
 
@@ -29,47 +28,39 @@ class PresenceDetector:
 
         gray = cv2.GaussianBlur(
             gray,
-            (21,21),
+            (5,5),
             0
         )
 
 
-
-        if self.previous_frame is None:
-
-            self.previous_frame = gray
-
-            return False
-
-
-
-        difference = cv2.absdiff(
-            self.previous_frame,
-            gray
-        )
-
-
-        _, thresh = cv2.threshold(
-            difference,
-            25,
+        _, binary = cv2.threshold(
+            gray,
+            80,
             255,
-            cv2.THRESH_BINARY
+            cv2.THRESH_BINARY_INV
         )
 
 
-        changed_pixels = np.sum(
-            thresh
+        contours, _ = cv2.findContours(
+            binary,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
         )
 
 
 
-        self.previous_frame = gray
+        for contour in contours:
 
 
+            area = cv2.contourArea(
+                contour
+            )
 
-        if changed_pixels > self.threshold:
 
-            return True
+            if area > self.threshold:
+
+                return True
+
 
 
         return False
