@@ -234,38 +234,97 @@ class InferenceService:
 
 
 
-#    ======================================
-  #  PREDICT SEMUA MODEL
- #   ======================================
+# ======================================
+# PREDICT SEMUA MODEL
+# ======================================
 
     def predict_all(
         self,
         frame
     ):
-
-
+    
+    
         image = self.preprocess(
             frame
         )
-
-
+    
+    
         results = {}
-
-
-
+    
+    
+    
+        best_result = None
+    
+    
+    
         for name, interpreter in self.models.items():
-
-
+    
+    
             prediction = (
                 self.predict_single(
                     interpreter,
                     image
                 )
             )
-
-
+    
+    
             results[name] = prediction
-
-
-
-        return results
+    
+    
+    
+            label = max(
+                prediction,
+                key=prediction.get
+            )
+    
+    
+            confidence = prediction[label]
+    
+    
+    
+            current_result = {
+    
+                "label":
+                    label,
+    
+                "confidence":
+                    float(confidence),
+    
+                "class_id":
+                    self.labels.index(
+                        label
+                    ),
+    
+                "model":
+                    name
+    
+            }
+    
+    
+    
+            print(
+                name,
+                current_result
+            )
+    
+    
+    
+            if (
+                best_result is None
+                or
+                confidence >
+                best_result["confidence"]
+            ):
+    
+    
+                best_result = current_result
+    
+    
+    
+        print(
+            "HASIL AKHIR:",
+            best_result
+        )
+    
+    
+        return best_result
