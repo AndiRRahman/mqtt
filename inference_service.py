@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
-
 import cv2
 import numpy as np
 
@@ -12,237 +8,261 @@ from ai_edge_litert.interpreter import Interpreter
 
 class InferenceService:
 
+
     def __init__(
         self,
-        model_path: str,
+        model_paths: dict[str, str],
         labels_path: str,
-        input_size: int = 224,
-    ) -> None:
+        input_size=(224,224)
+    ):
 
-        self.model_path = Path(model_path)
-
-        self.labels_path = Path(labels_path)
 
         self.input_size = input_size
 
 
-        self.labels = self._load_labels()
+        self.labels = self.load_labels(
+            labels_path
+        )
 
 
-        self.interpreter = Interpreter(
-            model_path=str(
-                self.model_path
+        self.models = {}
+
+
+        for name, path in model_paths.items():
+
+            print(
+                f"Loading model: {name}"
             )
-        )
 
 
-        self.interpreter.allocate_tensors()
+            interpreter = Interpreter(
+                model_path=path
+            )
 
 
-        self.input_details = (
-            self.interpreter
-            .get_input_details()
-        )
+            interpreter.allocate_tensors()
 
 
-        self.output_details = (
-            self.interpreter
-            .get_output_details()
-        )
+            self.models[name] = interpreter
+
 
 
         print(
-            "Model berhasil dimuat"
-        )
-
-
-        print(
-            "Input:",
-            self.input_details
-        )
-
-
-        print(
-            "Output:",
-            self.output_details
+            "Semua model berhasil dimuat"
         )
 
 
 
-    # ==========================================
+
+    # ======================================
     # LOAD LABEL
-    # ==========================================
+    # ======================================
 
-    def _load_labels(
+    def load_labels(
         self,
-    ) -> list[str]:
+        path
+    ):
+
 
         with open(
-            self.labels_path,
-            "r",
-            encoding="utf-8",
+            path,
+            "r"
         ) as file:
 
             labels = [
                 line.strip()
                 for line in file.readlines()
-                if line.strip()
             ]
 
 
         return labels
 
-    # ==========================================
-    # PREPROCESS IMAGE
-    # ==========================================
 
-    def _preprocess(
+
+
+    # ======================================
+    # PREPROCESS IMAGE
+    # ======================================
+
+    def preprocess(
         self,
-        frame: np.ndarray,
+        frame
     ):
-    
-        TARGET_SIZE = (224, 224)
-    
-    
-        # BGR OpenCV -> RGB
-        image = cv2.cvtColor(
+
+
+        image = cv2.resize(
             frame,
+            self.input_size
+        )
+
+
+        image = cv2.cvtColor(
+            image,
             cv2.COLOR_BGR2RGB
         )
-    
-    
-        # resize
-        image = cv2.resize(
-            image,
-            TARGET_SIZE
-        )
-    
-    
-        # uint8 -> float32
+
+
         image = image.astype(
             np.float32
-        ) / 255.0
-    
-    
-    
+        )
+
+
         # ImageNet normalization
-        mean = np.array(
-            [0.485, 0.456, 0.406],
-            dtype=np.float32
-        )
-    
-        std = np.array(
-            [0.229, 0.224, 0.225],
-            dtype=np.float32
-        )
-    
-    
-        image = (
-            image - mean
-        ) / std
-    
-    
-    
-        # HWC -> CHW
-        image = np.transpose(
-            image,
-            (2,0,1)
-        )
-    
-    
-        # tambah batch
+
+        image = image / 255.0
+
+
         image = np.expand_dims(
             image,
             axis=0
         )
-    
-    
+
+
         return image
 
 
 
-    # ==========================================
-    # PREDICT
-    # ==========================================
 
-    def predict(
+
+    # ======================================
+    # SOFTMAX
+    # ======================================
+
+    def softmax(
         self,
-        frame: np.ndarray,
-    ) -> dict[str, Any]:
+        output
+    ):
 
 
-        input_data = self._preprocess(
-            frame
+        exp = np.exp(
+            output -
+            np.max(output)
+        )
+
+
+        return exp / np.sum(
+            exp
+        )
+
+
+
+
+    # ======================================
+    # PREDICT SATU MODEL
+    # ======================================
+
+    def predict_single(
+        self,
+        interpreter,
+        image
+    ):
+
+
+        input_details = (
+            interpreter
+            .get_input_details()
+        )
+
+
+        output_details = (
+            interpreter
+            .get_output_details()
         )
 
 
         input_index = (
-            self.input_details[0]
-            ["index"]
+            input_details[0]["index"]
         )
-
-
-        self.interpreter.set_tensor(
-            input_index,
-            input_data,
-        )
-
-
-        self.interpreter.invoke()
-
 
 
         output_index = (
-            self.output_details[0]
-            ["index"]
+            output_details[0]["index"]
         )
+
+
+
+        interpreter.set_tensor(
+            input_index,
+            image
+        )
+
+
+        interpreter.invoke()
+
 
 
         output = (
-            self.interpreter
-            .get_tensor(output_index)
-        )
-
-
-
-        probabilities = (
-            output[0]
-        )
-
-
-
-        class_index = int(
-            np.argmax(
-                probabilities
+            interpreter
+            .get_tensor(
+                output_index
             )
         )
 
 
-        confidence = float(
-            probabilities[class_index]
+
+        output = np.squeeze(
+            output
         )
 
 
 
-        label = "Unknown"
+        probabilities = self.softmax(
+            output
+        )
 
 
-        if class_index < len(
+
+        result = {}
+
+
+
+        for i, label in enumerate(
             self.labels
         ):
 
-            label = (
-                self.labels[class_index]
+            result[label] = float(
+                probabilities[i]
             )
 
 
 
-        return {
+        return result
 
-            "label": label,
 
-            "confidence": confidence,
 
-            "class_id": class_index,
 
-        }
+    # ======================================
+    # PREDICT SEMUA MODEL
+    # ======================================
+
+    def predict_all(
+        self,
+        frame
+    ):
+
+
+        image = self.preprocess(
+            frame
+        )
+
+
+        results = {}
+
+
+
+        for name, interpreter in self.models.items():
+
+
+            prediction = (
+                self.predict_single(
+                    interpreter,
+                    image
+                )
+            )
+
+
+            results[name] = prediction
+
+
+
+        return results
