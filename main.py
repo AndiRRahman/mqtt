@@ -105,7 +105,9 @@ def load_models():
                 {
                     "name": filename,
                     "model": InferenceService(
-                        model_path=path,
+                        model_paths={
+                            filename: path
+                        },
                         labels_path="labels.txt"
                     )
                 }
