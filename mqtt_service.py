@@ -189,72 +189,48 @@ class MQTTService:
         self,
         prediction_result: dict[str, Any]
     ) -> bool:
-
-
+    
         if not self.is_connected():
-
+    
             print(
                 "MQTT belum terhubung"
             )
-
+    
             return False
-
-
-
+    
+    
         payload = json.dumps(
             {
-                "class":
-                    prediction_result.get(
-                        "label",
-                        "Unknown"
-                    ),
-
-
-                "confidence":
-                    prediction_result.get(
-                        "confidence",
-                        0.0
-                    ),
-
-
-                "class_id":
-                    prediction_result.get(
-                        "class_id",
-                        -1
-                    )
+                "class": prediction_result.get(
+                    "label",
+                    "NO_OBJECT"
+                )
             }
         )
-
-
-
+    
+    
         result = self.client.publish(
-            config.COMMAND_TOPIC,
+            "sampah/command",
             payload,
             qos=1
-
         )
-
+    
+    
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
-
-
+    
             print(
                 "Prediction sent:",
                 payload
             )
-
-
+    
             return True
-
-
-
+    
+    
         print(
             "Prediction gagal dikirim"
         )
-
-
+    
         return False
-
-
 
     # ======================================================
     # STATUS
