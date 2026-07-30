@@ -231,38 +231,38 @@ class InferenceService:
 
 
 
-    # ======================================
-    # PREDICT SEMUA MODEL
-    # ======================================
+    ======================================
+    PREDICT SEMUA MODEL
+    ======================================
 
-    # def predict_all(
-    #     self,
-    #     frame
-    # ):
-
-
-    #     image = self.preprocess(
-    #         frame
-    #     )
+    def predict_all(
+        self,
+        frame
+    ):
 
 
-    #     results = {}
+        image = self.preprocess(
+            frame
+        )
 
 
-
-    #     for name, interpreter in self.models.items():
-
-
-    #         prediction = (
-    #             self.predict_single(
-    #                 interpreter,
-    #                 image
-    #             )
-    #         )
-
-
-    #         results[name] = prediction
+        results = {}
 
 
 
-    #     return results
+        for name, interpreter in self.models.items():
+
+
+            prediction = (
+                self.predict_single(
+                    interpreter,
+                    image
+                )
+            )
+
+
+            results[name] = prediction
+
+
+
+        return results
