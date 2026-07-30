@@ -8,15 +8,11 @@ class PresenceDetector:
 
     def __init__(
         self,
-        threshold=20000,
-        min_area=5000
+        threshold: int = 5000
     ):
 
         self.background = None
-
         self.threshold = threshold
-
-        self.min_area = min_area
 
 
 
@@ -47,45 +43,23 @@ class PresenceDetector:
 
 
 
-        diff = cv2.absdiff(
+        difference = cv2.absdiff(
             self.background,
             gray
         )
 
 
-        _, thresh = cv2.threshold(
-            diff,
-            30,
+        _, mask = cv2.threshold(
+            difference,
+            25,
             255,
             cv2.THRESH_BINARY
         )
 
 
-        thresh = cv2.dilate(
-            thresh,
-            None,
-            iterations=2
+        pixels = cv2.countNonZero(
+            mask
         )
 
 
-        contours, _ = cv2.findContours(
-            thresh,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
-
-
-        for contour in contours:
-
-            area = cv2.contourArea(
-                contour
-            )
-
-
-            if area > self.min_area:
-
-                return True
-
-
-
-        return False
+        return pixels > self.threshold
