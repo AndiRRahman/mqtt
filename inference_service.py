@@ -111,14 +111,32 @@ class InferenceService:
     
     
     
-        # HWC -> CHW
-        image = np.transpose(
-            image,
-            (2,0,1)
+        mean = np.array(
+            [
+                0.485,
+                0.456,
+                0.406
+            ],
+            dtype=np.float32
         )
     
     
-        # tambah batch
+        std = np.array(
+            [
+                0.229,
+                0.224,
+                0.225
+            ],
+            dtype=np.float32
+        )
+    
+    
+        image = (
+            image - mean
+        ) / std
+    
+    
+    
         image = np.expand_dims(
             image,
             axis=0
