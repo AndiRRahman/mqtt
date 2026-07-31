@@ -137,13 +137,23 @@ class InferenceService:
     
     
     
+        # HWC -> CHW
+        image = np.transpose(
+            image,
+            (2,0,1)
+        )
+    
+    
+        # tambah batch
         image = np.expand_dims(
             image,
             axis=0
         )
     
     
-        return image
+        return image.astype(
+            np.float32
+        )
 
     # ======================================
     # SOFTMAX
